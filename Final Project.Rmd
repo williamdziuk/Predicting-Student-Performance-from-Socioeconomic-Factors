@@ -1,0 +1,436 @@
+---
+title: "PSTAT 131 Final Project"
+author: "Will Dziuk"
+date: "2024-02-25"
+output: html_document
+---
+
+# Intro
+
+The primary goal of this project is to study the effects of students' social and economic factors on grades. social and economic factors include but are not limited to the following: Parents education level and job, alcohol consumption, time spent studying, and access to extracurricular resources. The source of the dataset is from [Kaggle](https://www.kaggle.com/datasets/gabrielluizone/high-school-alcoholism-and-academic-performance/data) but originally comes from a Portuguese study.
+
+**Full Citation:** P. Cortez e A. Silva. Usando a Mineração de Dados para Prever o Desempenho do Aluno do Ensino Médio. Em A. Brito e J. Teixeira Eds., Proceedings of 5th FUture BUsiness TEChnology Conference (FUBUTEC 2008) pp. 5-12, Porto, Portugal, abril de 2008, EUROSIS, ISBN 978-9077381-39-7.
+
+The question to answer is why are students' grades the way they are. Are there features of a student's life that can predict their success in school. The outcome of this study might help combat some inequalities that lead to poor grades and or suggest life choices that can increase success in school. The goal of the project is to create a model that can successfully predict the grade average of a student based on their social and economic characteristics. There will be four different model types that will be fit to the data and the best will be chosen based on their rmse value, which is in the simplest of terms the difference between the predictions and the true values of the grade average.
+
+## Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Libraries
+
+```{r,message=FALSE,warning=FALSE}
+#The libraries that are used during the project
+library(tidyverse)
+library(tidymodels)
+library(corrplot)
+library(ggplot2)
+library(ranger)
+library(xgboost)
+library(vip)
+set.seed(2003)
+```
+
+### Read in Data
+
+```{r}
+#Read in data to a dataframe
+lpor = read.csv("C:/Users/willi/Desktop/PSTAT 131/Final Project/student-lpor.csv")
+
+#Display the first observations
+head(lpor)
+
+
+```
+
+I begin by reading in the data and assigning it to a dataframe I have named lpor for "Lingua Portuguesa", the class in which the grades are from. I then display the first 6 observations in order to get a feel for what the data looks like.
+
+# EDA
+
+## Missing Data
+
+```{r}
+#Check for missing data
+colSums(is.na(lpor)) #All good 0 missing values
+```
+
+To begin the EDA Section I check for missing data and observe that all the data points have all their features.
+
+## Correlation Plots
+
+```{r}
+
+#Create two new variables GA and GI - Grade Average and Grade Increase for the purpose of EDA
+lpor$GA <- (lpor$G1 + lpor$G2) / 2
+lpor$GI <- (lpor$G2 - lpor$G1)
+
+
+#GI
+print(mean(lpor$GI))
+
+#Plot G1 against G2
+ggplot(lpor, aes(x = G1, y = G2)) +
+  geom_point() +
+  geom_smooth(method = "lm",se = FALSE)+
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed")+
+  labs(title = "G1 vs G2 to explore GA", x = "G1", y = "G2")
+
+#Correlation Matrix
+lpor%>%
+  select(where(is.numeric))%>%
+  cor()%>%
+  corrplot(type = 'lower', diag = FALSE, title="Numeric Variables")
+
+#Nominal Correlation Matrix
+
+lporc <- lpor %>%
+  mutate_if(is.character, as.factor)
+lporc <- lporc %>%
+  select_if(is.factor)
+lporc <- lporc %>%
+  mutate_if(is.factor, as.numeric)
+lporc$GA <- lpor$GA
+lporc$GI <- lpor$GI
+
+lporc%>%
+  select(where(is.numeric))%>%
+  cor()%>%
+  corrplot(type = 'lower', diag = FALSE,title = "Nominal Variables")
+
+
+  
+```
+
+I start my EDA by adding two more variables to the dataframe, GA and GI. I plan to use GA as my response variable and I justify this by plotting G1 vs G2 and finding the mean of GI in order to show that there is a negligible difference between the first and second semester grades of the students. Therefore an accurate and valid assessment of a students success would come from GA the average between a student's first and second semester grades. It can be seen that GI has an average of .17 which is close to 0 and shows there isn't much change from G1 to G2.
+
+The G1 vs G2 plot shows us that there are some students that have one of their semester grades as a 0. Instead of marking these students as missing values I have decided to keep them as getting a 0 grade is a real possibility and will not effect the project.
+
+Next I do two correlation plots. One for the numerical predictors and one for the nominal predictors. Both of the correlation plots include GA as well because I am mainly interested in how the predictors are correlated with the response variable. It can also be seen that correlation with GI is nearly 0 for all features meaning it would not be a very interesting thing to study/predict. So again for the purpose of the project we will stick to GA.
+
+In the numerical corrplot we see that parent education level has a positive correlation with GA. We can also see that alcohol consumption statistics have a negative correlation with GA. The third set of correlations that stood out to me from this is travel and study time which are negatively and postively correlated with GA respectively. In the nominal corrplot we can see that the features with the strongest correlation with GA are school and desire to pursue higher education. All of these we will explore with plots in the next piece of EDA.
+
+## Plots
+
+```{r}
+#Plots
+medu_avgGA <- aggregate(GA ~ Medu, lpor, FUN = mean)
+fedu_avgGA <- aggregate(GA ~ Fedu, lpor, FUN = mean)
+dalc_avgGA <- aggregate(GA ~ Dalc, lpor, FUN = mean)
+walc_avgGA <- aggregate(GA ~ Walc, lpor, FUN = mean)
+study_avgGA <- aggregate(GA ~ studytime, lpor, FUN = mean)
+travel_avgGA <- aggregate(GA ~ traveltime, lpor, FUN = mean)
+
+#Comparing Mother and Father Education levels on Grade Average
+medu_avgGA2 <- medu_avgGA %>% mutate(Parent = "Mother") %>% mutate(x_var = Medu) %>% 
+  select(-Medu)
+fedu_avgGA2 <- fedu_avgGA %>% mutate(Parent = "Father") %>% mutate(x_var = Fedu) %>% 
+  select(-Fedu)
+rbind(medu_avgGA2, fedu_avgGA2) %>% 
+  mutate(Parent = factor(Parent)) %>% 
+  ggplot(aes(x = x_var, y = GA, color = Parent)) + geom_point() +
+  geom_line()+
+  labs(title = "Average Grade as Parent Education Increases", x = "Parent Education Level", y = "Average Grade")
+
+
+#Comparing Alchohol Consumption Rates
+
+dalc_avgGA2 <- dalc_avgGA %>% mutate(Time = "Weekday") %>% mutate(x_var = Dalc) %>% 
+  select(-Dalc)
+walc_avgGA2 <- walc_avgGA %>% mutate(Time = "Weekend") %>% mutate(x_var = Walc) %>% 
+  select(-Walc)
+rbind(dalc_avgGA2, walc_avgGA2) %>% 
+  mutate(Time = factor(Time)) %>% 
+  ggplot(aes(x = x_var, y = GA, color = Time)) + geom_point() +
+  geom_line()+
+  labs(title = "Average Grade as Alcohol Consumption Increases", x = "Alcohol Consumption Level", y = "Average Grade")
+
+#Comparing Time spent studying and going to school
+study_avgGA2 <- study_avgGA %>% mutate(Time_Spent = "Studying") %>% mutate(x_var = studytime) %>%
+  select(-studytime)
+travel_avgGA2 <- travel_avgGA %>% mutate(Time_Spent = "Traveling") %>% mutate(x_var = traveltime) %>% 
+  select(-traveltime)
+rbind(study_avgGA2, travel_avgGA2) %>% 
+  mutate(Time_Spent = factor(Time_Spent)) %>% 
+  ggplot(aes(x = x_var, y = GA, color = Time_Spent)) + geom_point() +
+  geom_line()+
+  labs(title = "Average Grade by time spent traveling to school and stuyding", x = "Level of Time Spent", y = "Average Grade")
+
+#Plot of Grade Average
+ggplot(lpor, aes(GA)) +
+  geom_bar(fill = 'green') +
+  labs(
+    title = "Distribution of Grade Average"
+  )
+mean(lpor$GA)
+sd(lpor$GA)
+
+#Plotting some nominal variables against GA
+ggplot(lpor, aes(x = higher, y = GA)) +
+  stat_summary(fun = "mean", geom = "bar",fill=c("red","green")) +
+  labs(x = "Desire to pursue a degree (higher)")+
+  theme_minimal()
+
+#Plotting some nominal variables against GA
+ggplot(lpor, aes(x = school, y = GA)) +
+  stat_summary(fun = "mean", geom = "bar",fill=c("red","green")) +
+  labs(x = "School Attended (school)") +
+  theme_minimal()
+
+
+```
+
+In my three line graphs I plot the features discussed earlier against the average grade for each level. It seems that as the parent education increases after elementary school so does grade average. As alcohol consumption levels increase grade average decreases. The grade average also decreases as the time spent traveling to school increases and as one might expect, grade average correlates positively with amount of time spent studying. I also made a plot of the grade averages which seem to be normally distributed with a very slight left skew which may come from those students with a 0 grade in one of their semesters. The mean is around 11.5 and the standard deviation is around 2.7. I also made bar charts of the two nominal predictors that had high correlation. The students with a desire to pursue a degree had higher average grades than their peers. There was also a slight difference in the average grade between the two schools in the study.
+
+# Model Setup
+
+## Split Data
+
+```{r}
+#Split testing and training data
+lpor_split <- initial_split(lpor, prop = 0.80,
+                                strata = GA)
+lpor_train <- training(lpor_split)
+lpor_test <- testing(lpor_split)
+
+#Create 5 Folds
+lpor_fold <- vfold_cv(lpor_train, v = 5, strata = GA)
+```
+
+Here I am splitting the data into training and testing sets. I chose a proportion of 0.80. Then I am performing 5-Fold cross-validation. I made sure to stratify both the split and the cross-validation.
+
+## Recipe
+
+```{r}
+lpor_recipe = 
+  recipe(GA ~ ., data = lpor_train)%>%
+  step_rm(G1,G2,GI)%>%
+  step_dummy(all_nominal_predictors())%>%
+  step_center()%>%
+  step_scale()
+  
+  
+prep(lpor_recipe)%>%
+  bake(new_data = lpor_train)
+```
+
+In my recipe I use all my predictors. I make sure to remove G1,G2, and GI because they would obviously predict GA very well and we would not get insight from using these to make predictions. I tune all my nominal predictors into dummy variables so they can be used too. I center and scale my features.
+
+# Models
+
+```{r}
+#Linear Regression Model
+lm_model <- linear_reg() %>% 
+  set_engine("lm")
+
+lm_wflow <- workflow() %>% 
+  add_model(lm_model) %>% 
+  add_recipe(lpor_recipe)
+
+
+#KNN Model
+knn_model <- nearest_neighbor(neighbors = tune()) %>% 
+  set_engine("kknn") %>% 
+  set_mode("regression")
+
+knn_wflow <- workflow() %>% 
+  add_model(knn_model) %>% 
+  add_recipe(lpor_recipe)
+
+
+#Random Forest Model
+rf_model <- rand_forest(mtry = tune(), 
+                           trees = tune(), 
+                           min_n = tune()) %>%
+  set_engine("ranger", importance = "impurity") %>% 
+  set_mode("regression")
+
+rf_wflow <- workflow() %>% 
+  add_model(rf_model) %>% 
+  add_recipe(lpor_recipe)
+
+
+#Boosted Tree Model
+
+bt_model <- boost_tree(mtry = tune(), 
+                           trees = tune(), 
+                           learn_rate = tune()) %>%
+  set_engine("xgboost") %>% 
+  set_mode("regression")
+
+bt_wflow <- workflow() %>% 
+  add_model(bt_model) %>% 
+  add_recipe(lpor_recipe)
+
+```
+
+For my four models I decided on Linear Regression, KNN Regression, Random Forest and Boosted Tree. In this step I set all the models and workflows where I add the recipe. I made sure to set up models so that they can be tuned.
+
+## Grids
+
+```{r}
+#KNN
+knn_grid <- grid_regular(neighbors(range = c(1, 30),trans = identity_trans()),levels = 10)
+
+
+#Random Forest
+rf_grid <- grid_regular(mtry(range = c(5, 25)), 
+                        trees(range = c(200, 600)),
+                        min_n(range = c(10, 20)),
+                        levels = 5)
+
+#Boosted Tree
+
+bt_grid <- grid_regular(mtry(range = c(1, 10)), 
+                        trees(range = c(200, 600)),
+                        learn_rate(range = c(0.01,0.1)),
+                        levels = 5)
+```
+
+In this step I define a grid of values in order to tune my models. I set up ranges for each hyper-parameter in my model that is tuned.
+
+## Tune Models
+
+```{r, eval=FALSE}
+#Linear Regression
+lm_fit <- lm_wflow %>% 
+  fit_resamples(resamples = lpor_fold)
+
+#KNN
+knn_tune <- tune_grid(
+  knn_wflow,
+  resamples = lpor_fold, 
+  grid = knn_grid
+)
+
+#Random Forest
+rf_tune <- tune_grid(
+  rf_wflow, 
+  resamples = lpor_fold, 
+  grid = rf_grid
+)
+
+#Boosted Tree
+
+bt_tune <- tune_grid(
+  bt_wflow, 
+  resamples = lpor_fold, 
+  grid = bt_grid
+)
+```
+
+In this step I tune all the models with the grids made previously and make sure to turn eval off in order to save time when knitting. I make sure to tune with my 5-fold cross validation from earlier.
+
+## Save Tuning
+
+```{r,eval=FALSE}
+save(knn_tune, file = "knn_tune.rda")
+save(rf_tune, file = "rf_tune.rda")
+save(bt_tune, file = "bt_tune.rda")
+save(lm_fit,file = "lm_fit.rda")
+```
+
+I save the completed tuned models so I do not have to run it again. I also turn off eval for this because I only need to do it once.
+
+## Compare Models
+
+### Load Tunings
+
+```{r}
+load("knn_tune.rda")
+load("rf_tune.rda")
+load("bt_tune.rda")
+load("lm_fit.rda")
+```
+
+Load back in the saved tuned models.
+
+### Metrics
+
+```{r}
+#Linear Regression
+collect_metrics(lm_fit)
+
+#KNN
+best_knn <- select_by_one_std_err(knn_tune,
+                          metric = "rmse",
+                          neighbors
+                          )
+best_knn
+
+
+#Random Forest
+show_best(rf_tune,metric="rmse")
+
+#Boosted Tree
+show_best(bt_tune,metric="rmse")          
+
+```
+
+Here I collect the best results of all the models with RMSE as what I base the performance on. I use show_best() for Random Forest and Boosted Tree but I decide to take standard deviation into account with KNN because a lot of the means ended up being similar.
+
+Based on RMSE it can be seen that the order of models from best to worst is: Random Forest, Linear Regression, KNN, Boosted Tree.
+
+### Plots
+
+```{r}
+autoplot(knn_tune,metric='rmse') + theme_minimal()
+
+autoplot(rf_tune,metric='rmse') + theme_minimal()
+
+autoplot(bt_tune,metric='rmse') + theme_minimal()
+```
+
+I create an autoplot for each model that has tuning, and ask specifically for it to show rmse. In the KNN plot we can see that as the number of neighbors increases the rmse decreases. For Random Forest the number of trees didn't seem to have much effect on rmse, while the node size seemed to increase the rmse as it got larger. The number of randomly selected predictors seemed to get better and be the best around 20 and then get worse again in regards to rmse. For the boosted tree models the number of trees seemed to overlap completely and not have an effect on the rmse. The learning rate changed the models dramatically, with lower learning rates having smaller rmse. The number of randomly selected predictors also fluctuated on their effect on rmse.
+
+# Chosen Model
+
+```{r}
+select_best(rf_tune,metric = 'rmse')
+```
+
+I have decided to choose the Random Forest Model - specifically the Preprocessor1_Model002 which has hyperparameters mtry =25 trees = 300 and min_n = 17.
+
+## Fitting to training Data
+
+```{r}
+final_rf_model <- finalize_workflow(rf_wflow, select_best(rf_tune,metric="rmse"))
+final_rf_model <- fit(final_rf_model, lpor_train)
+```
+
+Here I fit my chosen model to the entire training data.
+
+## Fitting to testing Data
+
+```{r}
+
+final_rf_model_test <- augment(final_rf_model, lpor_test)
+
+rmse(final_rf_model_test, truth = GA, .pred)
+```
+
+Here I fit the chosen model to the testing data. The model performed worse on the testing set than on the cross-validation folds with an rmse of 2.43. Rmse is proportional to the range of values our response variable takes on. So the model did not do amazingly since the range is 0-20 and as we saw in the EDA section the response variable GA is approximately normally distributed with a standard deviation larger than this rmse value.
+
+## Plots
+
+```{r}
+final_rf_model_test %>% 
+  ggplot(aes(x = GA, y = .pred)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(lty = 5, color = 'red') +
+  geom_smooth(method = "lm",se = FALSE)+
+  theme_minimal()
+
+final_rf_model %>% extract_fit_parsnip() %>% 
+  vip() +
+  theme_minimal()
+```
+
+Here I plot the predicted GA values vs the actual GA models from the test data set. I added a red dashed y=x line to show where the points would be if they were predicted perfectly. The blue solid line is the linear regression line of these points and shows that we are relatively far off from the desired y=x. The next plot is the variable importance plot. The two most important variables were desire to pursue higher education and the school attended. This makes sense because they were the most correlated with grade average as seen in the correlation plots from the EDA section.
+
+# Conclusion
+
+After fitting four different model types and conducting analysis on each of them, the best model to predict the Grade Average of a student in this study seems to be the Random Forest model. However this model still does not do a great job predicting the Grade Average as seen by the final testing rmse value. The model that did the worst on the other hand was Boosted Tree, the rmse was the largest out of the four model types that I ran.
+
+Future models for this project could include polynomial regression because if we take a look at the EDA section we can see that the parent education level variables have a relationship with the grade average that looks less linear and more quadratic. I could also have tried ridge, lasso and elastic net regression models for this project as they all can be done with my data. For a future project that is in the same realm of study I may consider American students instead of Portuguese students and maybe observe students in University. Because the grade average data comes from a language class it might be interesting to take a look at grades from a math class or maybe a students overall grades in all of their classes. If it is possible to find a data set with more predictor data similar to "desire to pursue higher education", the highest variable in the importance plot, such as desire to become a doctor, then maybe we can have even stronger prediction ability in a future model.

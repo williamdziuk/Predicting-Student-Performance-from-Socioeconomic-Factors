@@ -1,0 +1,65 @@
+school: Student's school (binary: GP (Gabriel Pereira) or MS (Mousinho da Silveira))
+
+sex: Student's sex (binary: 'F' - female or 'M' - male)
+
+age: Student age (numeric: 15 to 22)
+
+address: Type of student's residential address (binary: 'U' - urban or 'R' - rural)
+
+famsize: Family size (binary: 'LE3' - less than or equal to 3 or 'GT3' - greater than 3)
+
+Pstatus: Parents' cohabitation status (binary: 'T' - living together or 'A' - separated)
+
+Medu: Mother's education level (0 - none, 1 - Elementary School 1, 2 - Elementary School 2, 3 - High School or 4 - Higher Education)
+
+Fedu: Father's education level (0 - none, 1 - Elementary School 1, 2 - Elementary School 2, 3 - High School or 4 - Higher Education)
+
+Mjob: Mother's job (nominal: teacher, health, services, at_home or Other)
+
+Fjob: Father's job (nominal: teacher, health, services, at_home or Other)
+
+reason: Reason for choosing this school (nominal: home, reputation, course or other)
+
+guardian: Student's guardian (nominal: mother, father or other)
+
+traveltime: Travel time from home to school (time intervals: 1 - <15 min., 2 - 15 to 30 min., 3 - 30 min. to 1 hour or 4 - >1 hour )
+
+studytime: Weekly study time (time intervals: 1 - <2 hours, 2 - 2 to 5 hours, 3 - 5 to 10 hours or 4 - >10 hours)
+
+schoolsup: Extra educational support (binary: yes or no)
+
+famsup: Family educational support (binary: yes or no)
+
+paid: Private classes on subjects related to the course (binary: yes or no)
+
+activities: Performs extracurricular activities (binary: yes or no)
+
+nursery: Attended daycare (binary: yes or no)
+
+higher: Desire to pursue a degree (binary: yes or no)
+
+internet: Internet access at home (binary: yes or no)
+
+romantic: Are you in a romantic relationship (binary: yes or no)
+
+famrel: Quality of family relationships (categorical: from 1 - very bad to 5 - excellent)
+
+freetime: Free time after school (categorical: from 1 - very low to 5 - very high)
+
+goout: Time with friends (categorical: from 1 - very low to 5 - very high)
+
+Dalc: Alcohol consumption on the work day (categorical: from 1 - very low to 5 - very high)
+
+Walc: Alcohol consumption on the weekend (categorical: from 1 - very low to 5 - very high)
+
+health: Current health status (categorical: from 1 - very bad to 5 - very good)
+
+absences: Number of school absences (numeric: from 0 to 93)
+
+G1: First semester grade (numeric: from 0 to 20)
+
+G2: Second semester grade (numeric: from 0 to 20)
+
+GA: Average of G1 and G2
+
+GI: Difference between G2 and G1
